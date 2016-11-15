@@ -7288,6 +7288,16 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	} else {
 	  _txc_finalize_kv(txc, txc->t);
 	  txc->state = TransContext::STATE_KV_SUBMITTED;
+	  if (g_conf->bluestore_sync_commit_transaction &&
+	      txc->osr->txc_with_unsubmitted_completions.load() == 1) {
+	    dout(20) << __func__ << " sync commit transaction " << txc << dendl;
+	    db->submit_transaction_sync(txc->t);
+	    // this matches the put() in kv_sync_thread
+	    throttle_bytes.put(txc->cost);
+	    _txc_state_proc(txc);
+	    return;
+	  }
+	  dout(20) << __func__ << " sync submit transaction " << txc << dendl;
 	  int r = db->submit_transaction(txc->t);
 	  assert(r == 0);
 	  _txc_applied_kv(txc);
