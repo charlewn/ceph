@@ -7242,6 +7242,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       if (txc->ioc.has_pending_aios()) {
 	txc->state = TransContext::STATE_AIO_WAIT;
 	txc->had_ios = true;
+	txc->in_queue_context = false;
 	_txc_aio_submit(txc);
 	return;
       }
@@ -7289,6 +7290,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	  _txc_applied_kv(txc);
 	}
       }
+      txc->in_queue_context = false;
       {
 	std::lock_guard<std::mutex> l(kv_lock);
 	kv_queue.push_back(txc);
@@ -7299,6 +7301,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	}
       }
       return;
+
     case TransContext::STATE_KV_SUBMITTED:
       txc->log_state_latency(logger, l_bluestore_state_kv_committing_lat);
       txc->state = TransContext::STATE_KV_DONE;
@@ -7309,6 +7312,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       txc->log_state_latency(logger, l_bluestore_state_kv_done_lat);
       if (txc->deferred_txn) {
 	txc->state = TransContext::STATE_DEFERRED_QUEUED;
+	txc->in_queue_context = false;
 	_deferred_queue(txc);
 	return;
       }
@@ -7317,6 +7321,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 
     case TransContext::STATE_DEFERRED_AIO_WAIT:
       txc->log_state_latency(logger, l_bluestore_state_deferred_aio_wait_lat);
+      txc->in_queue_context = false;
       _deferred_finish(txc);
       return;
 
@@ -7358,6 +7363,7 @@ void BlueStore::_txc_finish_io(TransContext *txc)
     if (p->state < TransContext::STATE_IO_DONE) {
       dout(20) << __func__ << " " << txc << " blocked by " << &*p << " "
 	       << p->get_state_name() << dendl;
+      txc->in_queue_context = false;
       return;
     }
     if (p->state > TransContext::STATE_IO_DONE) {
@@ -7855,6 +7861,7 @@ void BlueStore::_kv_sync_thread()
 	}
       }
       for (auto txc : kv_committing) {
+	assert(!txc->in_queue_context);
 	if (txc->had_ios) {
 	  --txc->osr->txc_with_unstable_io;
 	}
@@ -7935,6 +7942,7 @@ void BlueStore::_kv_sync_thread()
       }
       while (!deferred_stable.empty()) {
 	TransContext *txc = deferred_stable.front();
+	assert(!txc->in_queue_context);
 	_txc_state_proc(txc);
 	deferred_stable.pop_front();
       }
@@ -8030,6 +8038,7 @@ void BlueStore::_deferred_try_submit(OpSequencer *osr)
        i != osr->deferred_running.rend();
        ++i) {
     TransContext *txc = &*i;
+    assert(!txc->in_queue_context);
     bluestore_deferred_transaction_t& wt = *txc->deferred_txn;
     dout(20) << __func__ << "  txc " << txc << " seq " << wt.seq << dendl;
     txc->log_state_latency(logger, l_bluestore_state_deferred_queued_lat);
