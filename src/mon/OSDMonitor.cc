@@ -6279,6 +6279,12 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       goto reply;
     }
 
+    if (crush.has_legacy_rulesets()) {
+      err = -EINVAL;
+      ss << "crush maps with ruleset != ruleid are no longer allowed";
+      goto reply;
+    }
+
     if (!validate_crush_against_features(&crush, ss)) {
       err = -EINVAL;
       goto reply;
