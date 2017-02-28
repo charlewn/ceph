@@ -121,3 +121,5 @@
 * The 'rados df' JSON output now prints numeric values as numbers instead of
   strings.
 
+* The deprecated 'crush_ruleset' property has finally been removed; please use
+  'crush_rule' instead for the 'osd pool get ...' and 'osd pool set ..' commands.
