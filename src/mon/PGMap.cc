@@ -1970,7 +1970,7 @@ void PGMap::dump_pool_stats(const OSDMap &osd_map, stringstream *ss,
     const pool_stat_t &stat = pg_pool_sum.at(pool_id);
 
     const pg_pool_t *pool = osd_map.get_pg_pool(pool_id);
-    int ruleno = osd_map.crush->find_rule(pool->get_crush_ruleset(),
+    int ruleno = osd_map.crush->find_rule(pool->get_crush_rule(),
                                          pool->get_type(),
                                          pool->get_size());
     int64_t avail;
@@ -2653,7 +2653,7 @@ void PGMapUpdater::register_new_pgs(
   for (const auto &p : pools) {
     int64_t poolid = p.first;
     const pg_pool_t &pool = p.second;
-    int ruleno = osd_map.crush->find_rule(pool.get_crush_ruleset(),
+    int ruleno = osd_map.crush->find_rule(pool.get_crush_rule(),
                                           pool.get_type(), pool.get_size());
     if (ruleno < 0 || !osd_map.crush->rule_exists(ruleno))
       continue;
