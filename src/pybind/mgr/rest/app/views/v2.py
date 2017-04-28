@@ -192,9 +192,6 @@ but those without static defaults will be set to null.
         if int(ceph_config['osd_pool_default_crush_rule']) in ruleset_ids:
             # This is the ceph<0.80 setting
             default_ruleset = ceph_config['osd_pool_default_crush_rule']
-        elif int(ceph_config.get('osd_pool_default_crush_replicated_ruleset', -1)) in ruleset_ids:
-            # This is the ceph>=0.80
-            default_ruleset = ceph_config['osd_pool_default_crush_replicated_ruleset']
         else:
             # Ceph may have an invalid default set which
             # would cause undefined behaviour in pool creation (#8373)
