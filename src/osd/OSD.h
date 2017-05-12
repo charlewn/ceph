@@ -2386,6 +2386,8 @@ protected:
     case MSG_OSD_REP_SCRUBMAP:
     case MSG_OSD_PG_UPDATE_LOG_MISSING:
     case MSG_OSD_PG_UPDATE_LOG_MISSING_REPLY:
+    case CEPH_MSG_PING:
+    case MSG_OSD_PING:
       return true;
     default:
       return false;
