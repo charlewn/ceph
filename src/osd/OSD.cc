@@ -982,7 +982,7 @@ pair<ConnectionRef,ConnectionRef> OSDService::get_con_osd_hb(int peer, epoch_t f
     ret.first = osd->hb_back_client_messenger->get_connection(
       next_map->get_hb_back_inst(peer));
     if (next_map->get_hb_front_addr(peer) != entity_addr_t())
-      ret.second = osd->hb_front_client_messenger->get_connection(
+      ret.second = osd->hb_front_client_legacy_messenger->get_connection(
 	next_map->get_hb_front_inst(peer));
   }
   release_map(next_map);
@@ -1793,6 +1793,7 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
 	 Messenger *internal_messenger,
 	 Messenger *external_messenger,
 	 Messenger *hb_client_front,
+	 Messenger *hb_client_front_legacy,
 	 Messenger *hb_client_back,
 	 Messenger *hb_front_serverm,
 	 Messenger *hb_back_serverm,
@@ -1837,6 +1838,7 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
   heartbeat_stop(false),
   heartbeat_need_update(true),
   hb_front_client_messenger(hb_client_front),
+  hb_front_client_legacy_messenger(hb_client_front_legacy),
   hb_back_client_messenger(hb_client_back),
   hb_front_server_messenger(hb_front_serverm),
   hb_back_server_messenger(hb_back_serverm),
@@ -2390,6 +2392,7 @@ int OSD::init()
   cluster_messenger->add_dispatcher_head(this);
 
   hb_front_client_messenger->add_dispatcher_head(&heartbeat_dispatcher);
+  hb_front_client_legacy_messenger->add_dispatcher_head(&heartbeat_dispatcher);
   hb_back_client_messenger->add_dispatcher_head(&heartbeat_dispatcher);
   hb_front_server_messenger->add_dispatcher_head(&heartbeat_dispatcher);
   hb_back_server_messenger->add_dispatcher_head(&heartbeat_dispatcher);
@@ -3239,6 +3242,7 @@ int OSD::shutdown()
   client_messenger->shutdown();
   cluster_messenger->shutdown();
   hb_front_client_messenger->shutdown();
+  hb_front_client_legacy_messenger->shutdown();
   hb_back_client_messenger->shutdown();
   objecter_messenger->shutdown();
   hb_front_server_messenger->shutdown();
@@ -7617,6 +7621,7 @@ void OSD::_committed_osd_maps(epoch_t first, epoch_t last, MOSDMap *m)
         }
 
 	hb_front_client_messenger->mark_down_all();
+	hb_front_client_legacy_messenger->mark_down_all();
 	hb_back_client_messenger->mark_down_all();
 
 	reset_heartbeat_peers();
