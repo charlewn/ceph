@@ -482,7 +482,9 @@ void OSDMap::Incremental::encode(bufferlist& bl, uint64_t features) const
       target_v = 2;
     }
     ENCODE_START(target_v, 1, bl); // extended, osd-only data
-    ::encode(new_hb_back_up, bl, features);
+    if (target_v < 5) {
+      ::encode(new_hb_back_up, bl, features);
+    }
     ::encode(new_up_thru, bl);
     ::encode(new_last_clean_interval, bl);
     ::encode(new_lost, bl);
@@ -492,7 +494,9 @@ void OSDMap::Incremental::encode(bufferlist& bl, uint64_t features) const
     ::encode(cluster_snapshot, bl);
     ::encode(new_uuid, bl);
     ::encode(new_xinfo, bl);
-    ::encode(new_hb_front_up, bl, features);
+    if (target_v < 5) {
+      ::encode(new_hb_front_up, bl, features);
+    }
     ::encode(features, bl);         // NOTE: features arg, not the member
     if (target_v >= 3) {
       ::encode(new_nearfull_ratio, bl);
@@ -684,7 +688,8 @@ void OSDMap::Incremental::decode(bufferlist::iterator& bl)
 
   {
     DECODE_START(5, bl); // extended, osd-only data
-    ::decode(new_hb_back_up, bl);
+    if (struct_v < 5)
+      ::decode(new_hb_back_up, bl);
     ::decode(new_up_thru, bl);
     ::decode(new_last_clean_interval, bl);
     ::decode(new_lost, bl);
@@ -694,7 +699,8 @@ void OSDMap::Incremental::decode(bufferlist::iterator& bl)
     ::decode(cluster_snapshot, bl);
     ::decode(new_uuid, bl);
     ::decode(new_xinfo, bl);
-    ::decode(new_hb_front_up, bl);
+    if (struct_v < 5)
+      ::decode(new_hb_front_up, bl);
     if (struct_v >= 2)
       ::decode(encode_features, bl);
     else
@@ -1038,8 +1044,13 @@ void OSDMap::set_max_osd(int m)
   osd_xinfo.resize(m);
   osd_addrs->client_addr.resize(m);
   osd_addrs->cluster_addr.resize(m);
-  osd_addrs->hb_back_addr.resize(m);
-  osd_addrs->hb_front_addr.resize(m);
+  if (!(flags & CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+    osd_addrs->hb_back_addr.resize(m);
+    osd_addrs->hb_front_addr.resize(m);
+  } else {
+    assert(osd_addrs->hb_back_addr.empty());
+    assert(osd_addrs->hb_front_addr.empty());
+  }
   osd_uuid->resize(m);
   if (osd_primary_affinity)
     osd_primary_affinity->resize(m, CEPH_OSD_DEFAULT_PRIMARY_AFFINITY);
@@ -1356,16 +1367,6 @@ void OSDMap::dedup(const OSDMap *o, OSDMap *n)
       n->osd_addrs->cluster_addr[i] = o->osd_addrs->cluster_addr[i];
     else
       diff++;
-    if ( n->osd_addrs->hb_back_addr[i] &&  o->osd_addrs->hb_back_addr[i] &&
-	*n->osd_addrs->hb_back_addr[i] == *o->osd_addrs->hb_back_addr[i])
-      n->osd_addrs->hb_back_addr[i] = o->osd_addrs->hb_back_addr[i];
-    else
-      diff++;
-    if ( n->osd_addrs->hb_front_addr[i] &&  o->osd_addrs->hb_front_addr[i] &&
-	*n->osd_addrs->hb_front_addr[i] == *o->osd_addrs->hb_front_addr[i])
-      n->osd_addrs->hb_front_addr[i] = o->osd_addrs->hb_front_addr[i];
-    else
-      diff++;
   }
   if (diff == 0) {
     // zoinks, no differences at all!
@@ -1494,6 +1495,11 @@ int OSDMap::apply_incremental(const Incremental &inc)
   if (inc.new_flags >= 0)
     flags = inc.new_flags;
 
+  if (flags & CEPH_OSDMAP_REQUIRE_LUMINOUS) {
+    osd_addrs->hb_front_addr.clear();
+    osd_addrs->hb_back_addr.clear();
+  }
+
   if (inc.new_max_osd >= 0)
     set_max_osd(inc.new_max_osd);
 
@@ -1563,8 +1569,10 @@ int OSDMap::apply_incremental(const Incremental &inc)
       set_primary_affinity(osd, CEPH_OSD_DEFAULT_PRIMARY_AFFINITY);
       osd_addrs->client_addr[osd].reset(new entity_addr_t());
       osd_addrs->cluster_addr[osd].reset(new entity_addr_t());
-      osd_addrs->hb_front_addr[osd].reset(new entity_addr_t());
-      osd_addrs->hb_back_addr[osd].reset(new entity_addr_t());
+      if (!(flags & CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+	osd_addrs->hb_front_addr[osd].reset(new entity_addr_t());
+	osd_addrs->hb_back_addr[osd].reset(new entity_addr_t());
+      }
       osd_state[osd] = 0;
     } else {
       osd_state[osd] ^= s;
@@ -1574,16 +1582,18 @@ int OSDMap::apply_incremental(const Incremental &inc)
   for (const auto &client : inc.new_up_client) {
     osd_state[client.first] |= CEPH_OSD_EXISTS | CEPH_OSD_UP;
     osd_addrs->client_addr[client.first].reset(new entity_addr_t(client.second));
-    if (inc.new_hb_back_up.empty())
-      osd_addrs->hb_back_addr[client.first].reset(new entity_addr_t(client.second)); //this is a backward-compatibility hack
-    else
-      osd_addrs->hb_back_addr[client.first].reset(
-	new entity_addr_t(inc.new_hb_back_up.find(client.first)->second));
-    const auto j = inc.new_hb_front_up.find(client.first);
-    if (j != inc.new_hb_front_up.end())
-      osd_addrs->hb_front_addr[client.first].reset(new entity_addr_t(j->second));
-    else
-      osd_addrs->hb_front_addr[client.first].reset();
+    if (!(flags & CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+      if (inc.new_hb_back_up.empty())
+	osd_addrs->hb_back_addr[client.first].reset(new entity_addr_t(client.second)); //this is a backward-compatibility hack
+      else
+	osd_addrs->hb_back_addr[client.first].reset(
+	  new entity_addr_t(inc.new_hb_back_up.find(client.first)->second));
+      const auto j = inc.new_hb_front_up.find(client.first);
+      if (j != inc.new_hb_front_up.end())
+	osd_addrs->hb_front_addr[client.first].reset(new entity_addr_t(j->second));
+      else
+	osd_addrs->hb_front_addr[client.first].reset();
+    }
 
     osd_info[client.first].up_from = epoch;
   }
@@ -2238,7 +2248,9 @@ void OSDMap::encode(bufferlist& bl, uint64_t features) const
       target_v = 1;
     }
     ENCODE_START(target_v, 1, bl); // extended, osd-only data
-    ::encode(osd_addrs->hb_back_addr, bl, features);
+    if (target_v < 4) {
+      ::encode(osd_addrs->hb_back_addr, bl, features);
+    }
     ::encode(osd_info, bl);
     {
       // put this in a sorted, ordered map<> so that we encode in a
@@ -2253,7 +2265,9 @@ void OSDMap::encode(bufferlist& bl, uint64_t features) const
     ::encode(cluster_snapshot, bl);
     ::encode(*osd_uuid, bl);
     ::encode(osd_xinfo, bl);
-    ::encode(osd_addrs->hb_front_addr, bl, features);
+    if (target_v < 4) {
+      ::encode(osd_addrs->hb_front_addr, bl, features);
+    }
     if (target_v >= 2) {
       ::encode(nearfull_ratio, bl);
       ::encode(full_ratio, bl);
@@ -2477,7 +2491,9 @@ void OSDMap::decode(bufferlist::iterator& bl)
 
   {
     DECODE_START(4, bl); // extended, osd-only data
-    ::decode(osd_addrs->hb_back_addr, bl);
+    if (struct_v < 4) {
+      ::decode(osd_addrs->hb_back_addr, bl);
+    }
     ::decode(osd_info, bl);
     ::decode(blacklist, bl);
     ::decode(osd_addrs->cluster_addr, bl);
@@ -2485,7 +2501,9 @@ void OSDMap::decode(bufferlist::iterator& bl)
     ::decode(cluster_snapshot, bl);
     ::decode(*osd_uuid, bl);
     ::decode(osd_xinfo, bl);
-    ::decode(osd_addrs->hb_front_addr, bl);
+    if (struct_v < 4) {
+      ::decode(osd_addrs->hb_front_addr, bl);
+    }
     if (struct_v >= 2) {
       ::decode(nearfull_ratio, bl);
       ::decode(full_ratio, bl);
@@ -2606,8 +2624,10 @@ void OSDMap::dump(Formatter *f) const
       get_info(i).dump(f);
       f->dump_stream("public_addr") << get_addr(i);
       f->dump_stream("cluster_addr") << get_cluster_addr(i);
-      f->dump_stream("heartbeat_back_addr") << get_hb_back_addr(i);
-      f->dump_stream("heartbeat_front_addr") << get_hb_front_addr(i);
+      if (!(flags & CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+	f->dump_stream("heartbeat_back_addr") << get_hb_back_addr(i);
+	f->dump_stream("heartbeat_front_addr") << get_hb_front_addr(i);
+      }
 
       set<string> st;
       get_state(i, st);
@@ -2813,8 +2833,10 @@ void OSDMap::print(ostream& out) const
 	out << " primary_affinity " << get_primary_affinityf(i);
       const osd_info_t& info(get_info(i));
       out << " " << info;
-      out << " " << get_addr(i) << " " << get_cluster_addr(i) << " " << get_hb_back_addr(i)
-	  << " " << get_hb_front_addr(i);
+      out << " " << get_addr(i) << " " << get_cluster_addr(i);
+      if (!(flags & CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+	out << " " << get_hb_back_addr(i) << " " << get_hb_front_addr(i);
+      }
       set<string> st;
       get_state(i, st);
       out << " " << st;
