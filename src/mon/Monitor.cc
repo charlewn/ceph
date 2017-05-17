@@ -3989,7 +3989,6 @@ void Monitor::handle_ping(MonOpRequestRef op)
   MPing *m = static_cast<MPing*>(op->get_req());
   dout(10) << __func__ << " " << *m << dendl;
   MPing *reply = new MPing;
-  entity_inst_t inst = m->get_source_inst();
   bufferlist payload;
   boost::scoped_ptr<Formatter> f(new JSONFormatter(true));
   f->open_object_section("pong");
@@ -4006,8 +4005,9 @@ void Monitor::handle_ping(MonOpRequestRef op)
   f->flush(ss);
   ::encode(ss.str(), payload);
   reply->set_payload(payload);
-  dout(10) << __func__ << " reply payload len " << reply->get_payload().length() << dendl;
-  messenger->send_message(reply, inst);
+  dout(10) << __func__ << " reply payload len " << reply->get_payload().length()
+	   << dendl;
+  m->get_connection()->send_message(reply);
 }
 
 void Monitor::timecheck_start()
