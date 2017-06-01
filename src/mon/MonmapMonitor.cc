@@ -40,6 +40,9 @@ void MonmapMonitor::create_initial()
   dout(10) << "create_initial using current monmap" << dendl;
   pending_map = *mon->monmap;
   pending_map.epoch = 1;
+
+  // initialize with default persistent features for new clusters
+  pending_map.persistent_features = ceph::features::mon::get_persistent();
 }
 
 void MonmapMonitor::update_from_paxos(bool *need_bootstrap)
