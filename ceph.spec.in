@@ -127,8 +127,10 @@ BuildRequires:	pkgconfig
 BuildRequires:	python
 BuildRequires:	python-devel
 BuildRequires:	python-nose
+BuildRequires:	python-pecan
 BuildRequires:	python-requests
 BuildRequires:	python-virtualenv
+BuildRequires:	python-werkzeug
 BuildRequires:	snappy-devel
 BuildRequires:	udev
 BuildRequires:	util-linux
