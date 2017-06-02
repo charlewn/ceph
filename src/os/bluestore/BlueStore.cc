@@ -7829,7 +7829,7 @@ void BlueStore::_txc_finish(TransContext *txc)
           notify = true;
 	}
 	if (txc->state == TransContext::STATE_DEFERRED_QUEUED &&
-	    osr->q.size() > g_conf->bluestore_max_deferred_txc) {
+	    (int)osr->q.size() > g_conf->bluestore_max_deferred_txc) {
 	  submit_deferred = true;
 	}
         break;
